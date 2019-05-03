@@ -8,6 +8,7 @@
 
 double getMonotonicSecond();
 double cpuSecond();
+void writeToFile(char* filename, double* times, int len);
 
 void timer_handler(int signum)
 {
@@ -48,9 +49,13 @@ int main(int argc, char** argv){
             timestamps[i] = cpuSecond();
         }
 
-        for (int i=1;i<count;i++){
-            printf("Difference: %lf\n",timestamps[i]-timestamps[i-1]);
-        }
+        // double* difs = (double*)malloc((count-1)*sizeof(difs));
+        // for (int i=1;i<count;i++){
+        //   difs[i-1] = timestamps[i]-timestamps[i-1];
+        //   printf("Difference: %lf\n",timestamps[i]-timestamps[i-1]);
+        // }
+    
+        writeToFile("./sleepTimer.txt",timestamps,count);
     }
     
     return 0;
@@ -67,4 +72,13 @@ double getMonotonicSecond(){
     struct timespec tp;
     clock_gettime(CLOCK_MONOTONIC,&tp);
     return ((double)tp.tv_sec + (double)tp.tv_nsec*1e-9);
+}
+
+void writeToFile(char* filename, double* times, int len){
+  FILE* fp1;
+  fp1 = fopen(filename,"w");
+
+  for (int i=0;i<len;i++){
+    fprintf(fp1,"%lf\n",times[i]);
+  }
 }

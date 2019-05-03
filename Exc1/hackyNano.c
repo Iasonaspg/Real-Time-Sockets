@@ -6,6 +6,7 @@
 
 double getSecond();
 double getMonotonicSecond();
+void writeToFile(char* filename, double* times, int len);
 
 int main(int argc, char** argv){
 
@@ -43,22 +44,35 @@ int main(int argc, char** argv){
       times[i] = t1;
     }
 
-    for (int i=1;i<count;i++){
-      printf("Difference: %lf\n",times[i]-times[i-1]);
-    }
+    // double* difs = (double*)malloc((count-1)*sizeof(difs));
+    // for (int i=1;i<count;i++){
+    //   difs[i-1] = times[i]-times[i-1];
+    //   printf("Difference: %lf\n",times[i]-times[i-1]);
+    // }
+
+    writeToFile("./hacky.txt",times,count);
   }
   return 0;
 }
 
 
 double getSecond() {
-    struct timeval tp;
-    gettimeofday(&tp,NULL);
-    return ((double)tp.tv_sec + (double)tp.tv_usec*1.e-6);
+  struct timeval tp;
+  gettimeofday(&tp,NULL);
+  return ((double)tp.tv_sec + (double)tp.tv_usec*1.e-6);
 }
 
 double getMonotonicSecond(){
-    struct timespec tp;
-    clock_gettime(CLOCK_MONOTONIC,&tp);
-    return ((double)tp.tv_sec + (double)tp.tv_nsec*1e-9);
+  struct timespec tp;
+  clock_gettime(CLOCK_MONOTONIC,&tp);
+  return ((double)tp.tv_sec + (double)tp.tv_nsec*1e-9);
+}
+
+void writeToFile(char* filename, double* times, int len){
+  FILE* fp1;
+  fp1 = fopen(filename,"w");
+
+  for (int i=0;i<len;i++){
+    fprintf(fp1,"%lf\n",times[i]);
+  }
 }
