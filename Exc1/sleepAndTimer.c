@@ -7,7 +7,7 @@
 #include <time.h>
 
 double getMonotonicSecond();
-double cpuSecond();
+double getSecond();
 void writeToFile(char* filename, double* times, int len);
 
 void timer_handler(int signum)
@@ -46,7 +46,7 @@ int main(int argc, char** argv){
 
         for (int i=0;i<count;i++){
             sleep(dt_sec+1);
-            timestamps[i] = cpuSecond();
+            timestamps[i] = getSecond();
         }
 
         // double* difs = (double*)malloc((count-1)*sizeof(difs));
@@ -62,7 +62,7 @@ int main(int argc, char** argv){
 }
 
 
-double cpuSecond() {
+double getSecond() {
     struct timeval tp;
     gettimeofday(&tp,NULL);
     return ((double)tp.tv_sec + (double)tp.tv_usec*1.e-6);
