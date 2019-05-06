@@ -27,7 +27,7 @@ int main(int argc, char** argv){
         float dt = strtof(argv[2],NULL);
         
         int count = duration/dt;
-        double* timestamps = (double*)malloc(count*sizeof(timestamps));
+        double* timestamps = (double*)malloc(count*sizeof(*timestamps));
 
         int dt_sec = (int) dt;
         long dt_usec = (dt - dt_sec) * 1.e6;
@@ -49,7 +49,7 @@ int main(int argc, char** argv){
             timestamps[i] = getSecond();
         }
 
-        // double* difs = (double*)malloc((count-1)*sizeof(difs));
+        // double* difs = (double*)malloc((count-1)*sizeof(*difs));
         // for (int i=1;i<count;i++){
         //   difs[i-1] = timestamps[i]-timestamps[i-1];
         //   printf("Difference: %lf\n",timestamps[i]-timestamps[i-1]);
