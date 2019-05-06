@@ -19,7 +19,7 @@ int main(int argc, char** argv){
     double dt = strtof(argv[2],NULL);
 
     int count = duration/dt;
-    double* times = (double*)malloc(count*sizeof(times));
+    double* times = (double*)malloc(count*sizeof(*times));
 
     int dt_sec = (int) dt;
     long dt_nsec = (dt - dt_sec) * 1.e9;
@@ -44,7 +44,7 @@ int main(int argc, char** argv){
       times[i] = t1;
     }
 
-    // double* difs = (double*)malloc((count-1)*sizeof(difs));
+    // double* difs = (double*)malloc((count-1)*sizeof(*difs));
     // for (int i=1;i<count;i++){
     //   difs[i-1] = times[i]-times[i-1];
     //   printf("Difference: %lf\n",times[i]-times[i-1]);
