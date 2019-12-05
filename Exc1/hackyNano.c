@@ -27,7 +27,7 @@ int main(int argc, char** argv){
     double t1 = getSecond();
     for (int i=0;i<count;i++){
       double t2 = getSecond();
-      double remain = (t1 + dt - t2)/1.001;
+      double remain = (t1 + dt - t2)/1.01;
       int remain_sec = (int) remain;
       long remain_nsec = (remain - remain_sec) * 1.e9;
       struct timespec ts;
@@ -44,13 +44,13 @@ int main(int argc, char** argv){
       times[i] = t1;
     }
 
-    // double* difs = (double*)malloc((count-1)*sizeof(*difs));
-    // for (int i=1;i<count;i++){
-    //   difs[i-1] = times[i]-times[i-1];
-    //   printf("Difference: %lf\n",times[i]-times[i-1]);
-    // }
+    double* difs = (double*)malloc((count-1)*sizeof(*difs));
+    for (int i=1;i<count;i++){
+      difs[i-1] = times[i]-times[i-1];
+      // printf("Difference: %lf\n",times[i]-times[i-1]);
+    }
 
-    writeToFile("./hacky.txt",times,count);
+    writeToFile("./hacky.txt",difs,count-1);
   }
   return 0;
 }

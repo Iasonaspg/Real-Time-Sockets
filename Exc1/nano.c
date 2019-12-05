@@ -31,13 +31,13 @@ int main(int argc,char** argv){
             timestamps[i] = getSecond();
         }
 
-        // double* difs = (double*)malloc((count-1)*sizeof(*difs));
-        // for (int i=1;i<count;i++){
-        //   difs[i-1] = timestamps[i]-timestamps[i-1];
+        double* difs = (double*)malloc((count-1)*sizeof(*difs));
+        for (int i=1;i<count;i++){
+          difs[i-1] = timestamps[i]-timestamps[i-1];
         //   printf("Difference: %lf\n",timestamps[i]-timestamps[i-1]);
-        // }
+        }
     
-        writeToFile("./nano.txt",timestamps,count);
+        writeToFile("./nano.txt",difs,count-1);
     }
     return 0;
 }
