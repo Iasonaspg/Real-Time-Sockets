@@ -22,10 +22,10 @@ int main(int argc, char** argv){
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;    // fill in my IP for me
+    // hints.ai_flags = AI_PASSIVE;    // fill in my IP for me
     
     // get ready to connect
-    int status = getaddrinfo(NULL, MYPORT, &hints, &res);
+    int status = getaddrinfo("10.0.90.15", MYPORT, &hints, &res);
     if (status != 0) {
         printf("getaddrinfo: %s\n", gai_strerror(status));
         return 1;
@@ -63,11 +63,11 @@ int main(int argc, char** argv){
 
     // receive messages
     char buf[25];
-    int rec_bytes = recv_msg(new_fd,buf,sizeof(buf));
-    while (rec_bytes > 0){
-        printf("Message: %s\n",buf);
+    int rec_bytes;
+    do{
         rec_bytes = recv_msg(new_fd,buf,sizeof(buf));
-    }
+        printf("Message: %s\n",buf);
+    } while (rec_bytes > 0);
 
     close(new_fd);
     close(sockfd);

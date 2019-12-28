@@ -78,7 +78,7 @@ int send_msg(int sockfd, char* msg){
         bytes_remain -= bytes_sent;
         total += bytes_sent;
     }
-    return bytes_sent;
+    return total;
 }
 
 char* random_string(size_t len){
