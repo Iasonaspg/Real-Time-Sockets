@@ -8,32 +8,38 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "ESPX.h"
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define buff_size 2000
 #define AEM_count 11
+#define BACKLOG 20
 
 
 uint32_t AEM[AEM_count] = {8021,8419,7351,4320,2810,4397,1500,8865,9020,7423,9015};
 uint32_t myAEM = 9015;
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.84.19","10.0.73.51","10.0.43.20",
-    "10.0.28.10","10.0.43.97","10.0.15.00","10.0.88.65","10.0.90.20","10.0.74.23","10.0.90.15"
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.73.51","10.0.43.20",
+    "10.0.28.10","10.0.90.15","10.0.43.97","10.0.15.00","10.0.88.65","10.0.90.20","10.0.74.23","10.0.0.1"
 };
 
 int sockfd[AEM_count];
 int connected[AEM_count];
+pthread_t threads[AEM_count],r_threads[AEM_count];
 
 typedef struct thread_data{
     struct addrinfo** res;
+    char** msg_buf;
+    int sock;
+    int msg_len;
 } thr_data;
 
 
 int main(int argc, char** argv){
-    if (argc !=2 ){
+    if (argc != 2 ){
         printf("Invalid input number of args\n");
         return 1;
     }
-
     srand(time(0));
     int msg_len = atoi(argv[1]);
     size_t msg_buf_len = 2*11 + 21 + 3*sizeof("_") + msg_len; // Int32 needs char[11] and Int64 needs char[21] to be stored
@@ -41,38 +47,62 @@ int main(int argc, char** argv){
     for (int i=0;i<buff_size;i++){
         buffer[i] = malloc(msg_buf_len*sizeof(*buffer[i]));
     }
-    generate_msg(buffer[4],msg_len);
+    generate_msg(msg_len,buffer[0]);
+    generate_msg(msg_len,buffer[1]);
+    generate_msg(msg_len,buffer[2]);
+    generate_msg(msg_len,buffer[3]);
+    printf("Message_1: %s\n",buffer[3]);
 
-
-    // Prepare addr structs
+    
+    // Prepare addr structs for server side
+    struct addrinfo* ser_res;
     struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;      // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+    // hints.ai_flags = AI_PASSIVE;
+    int status = getaddrinfo("10.0.0.14","2288",&hints,&ser_res);
+    if (status != 0) {
+        printf("getaddrinfo for localhost failed with code: %s\n", gai_strerror(status));
+    }
+    int ser_sock = socket(ser_res->ai_family,ser_res->ai_socktype,ser_res->ai_protocol);
+    if ( ser_sock == -1){
+        printf("Error on server socket creation\n");
+    }
+    status = bind(ser_sock,ser_res->ai_addr,ser_res->ai_addrlen);
+    if (status == -1){
+        printf("Error on server binding\n");
+    }
+    status = listen(ser_sock,BACKLOG);
+    if (status == -1){
+        printf("Error on listening\n");
+    }
+
+    // Prepare addr stucts for client side
     struct addrinfo** res = malloc(AEM_count*sizeof(*res));
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;
     for (int i=0;i<AEM_count;i++){
-        int status = getaddrinfo(IPs[i], "2288", &hints, res+i);
+        status = getaddrinfo(IPs[i], "2288", &hints, res+i);
         if (status != 0) {
             printf("getaddrinfo for IP: %s failed with code: %s\n", IPs[i], gai_strerror(status));
         }
-        else{
-            sockfd[i] = socket(res[i]->ai_family, res[i]->ai_socktype, res[i]->ai_protocol);
-            if (sockfd[i] == -1){
-                printf("Error on socket creation for IP: %s\n",IPs[i]);
-            }
-            else{
-                int synRetries = 1; // 2 => Timeout ~7s
-                setsockopt(sockfd[i], IPPROTO_TCP, TCP_SYNCNT, &synRetries, sizeof(synRetries));
-            }
-        }
     }
-    thr_data client_data;
+    thr_data client_data,server_data;
     client_data.res = res;
-    pthread_t thread1;
+    client_data.msg_buf = buffer;
+    server_data.msg_buf = buffer;
+    server_data.msg_len = strlen(buffer[0])+1;
+    server_data.sock = ser_sock;
+    pthread_t thread1,thread2;
     pthread_create(&thread1,NULL,client,(void *) &client_data);
-
-
+    pthread_create(&thread2,NULL,server,(void *) &server_data);
+    
     pthread_join(thread1,NULL); // Before free!!
+    pthread_join(thread2,NULL); // Before free!!
+    for (int i=0;i<AEM_count;i++) close(sockfd[i]);
+    close(ser_sock);
     free(res);
     free(buffer);
     pthread_exit(NULL);
@@ -83,16 +113,30 @@ int main(int argc, char** argv){
 void* client(void* dest){
     thr_data* data = (thr_data*) dest;
     struct addrinfo** res = data->res;
+    char** buffer = data->msg_buf;
+    thr_data comm_data[AEM_count];
     for (;;){
         for (int i=0;i<AEM_count;i++){
-            if ((sockfd[i] != -1) && (connected[i] != 1)){
-                int status = connect(sockfd[i],res[i]->ai_addr,res[i]->ai_addrlen);
-                if (status == -1){
-                    printf("Error on connecting to IP: %s\n",IPs[i]);
+            if (connected[i] != 1){
+                sockfd[i] = socket(res[i]->ai_family, res[i]->ai_socktype, res[i]->ai_protocol);
+                if (sockfd[i] == -1){
+                    printf("Error on socket creation for IP: %s\n",IPs[i]);
                 }
                 else{
-                    printf("Connection succeeded\n");
-                    connected[i] = 1;
+                    int synRetries = 1; // 2 => Timeout ~7s
+                    setsockopt(sockfd[i], IPPROTO_TCP, TCP_SYNCNT, &synRetries, sizeof(synRetries));
+                    int status = connect(sockfd[i],res[i]->ai_addr,res[i]->ai_addrlen);
+                    if (status == -1){
+                        printf("Error on connecting to IP: %s\n",IPs[i]);
+                        close(sockfd[i]);
+                    }
+                    else{
+                        printf("Connection succeeded\n");
+                        connected[i] = 1;
+                        comm_data[i].msg_buf = buffer;
+                        comm_data[i].sock = i;
+                        pthread_create(&threads[i],NULL,client_handler,(void *)&comm_data[i]);
+                    }
                 }
             }
         }
@@ -100,14 +144,109 @@ void* client(void* dest){
     pthread_exit(NULL);
 }
 
+void* server(void* dest){
+    thr_data* data = (thr_data*) dest;
+    int ser_sock = data->sock;
+    
+    struct sockaddr_storage cli_addr;
+    socklen_t addr_size = sizeof(cli_addr);
+    char ip[INET_ADDRSTRLEN];
+    thr_data comm_data[AEM_count];
+    for (;;){
+        int new_fd = accept(ser_sock, (struct sockaddr *)&cli_addr, &addr_size);
+        if (new_fd == -1){
+            printf("Error on accepting\n");
+        }
+        else{
+            printf("Connection accepted\n");
+            struct sockaddr_in* ip_struct = (struct sockaddr_in *) &cli_addr; 
+            inet_ntop(AF_INET,&(ip_struct->sin_addr),ip,INET_ADDRSTRLEN);
+            size_t pos = find_sender(AEM_count,ip);
+            if (pos != -1){
+                comm_data[pos].sock = new_fd;
+                comm_data[pos].msg_buf = data->msg_buf;
+                comm_data[pos].msg_len = data->msg_len;
+                pthread_create(&r_threads[pos],NULL,server_handler,(void *)&comm_data[pos]);
+            }
+        }
+    }
+    pthread_exit(NULL);
+}
 
 
+void* client_handler(void* data){
+    thr_data* inc_data = (thr_data *) data;
+    char** buffer = inc_data->msg_buf;
+    int sock = inc_data->sock;
+    for (int i=0;i<4;i++){
+        send_msg(sockfd[sock],buffer[i]);
+        printf("Sending: %s\n",buffer[i]);
+    }
+    close(sockfd[sock]);
+    connected[sock] = 0;
+    pthread_exit(NULL);
+}
 
+void* server_handler(void* data){
+    thr_data* inc_data = (thr_data*) data;
+    int sock = inc_data->sock;
+    int recv = 0;
+    int i = 0;
+    do{
+        recv = recv_msg(sock,inc_data->msg_buf[100+i],inc_data->msg_len);
+        if (recv > 0) printf("Received: %s\n",inc_data->msg_buf[100+i]);
+        i++;
+    } while (recv > 0);
+    close(sock);    
+}
 
+size_t find_sender(const size_t length, const char* value){
+    for (int i=0;i<length;i++){
+        int status = strcmp(value,IPs[i]);
+        if (status == 0) return i;
+    }
+    return -1;
+}
 
+/* Communication Functions */
+int send_msg(int sockfd, char* msg){
+    int bytes_sent = 0;
+    int bytes_remain = strlen(msg)+1; // null terminator
+    int total = 0;
+    while (bytes_remain > 0){
+        bytes_sent = send(sockfd,msg + total,bytes_remain,0);
+        if (bytes_sent == -1){
+            printf("Error on sending\n");
+            break;
+        }
+        bytes_remain -= bytes_sent;
+        total += bytes_sent;
+    }
+    return total;
+}
+
+int recv_msg(int sockfd, char* msg, size_t buflen){
+    size_t bytes_remain = buflen;
+    int recv_bytes = 0;
+    int total = 0;
+    while (bytes_remain > 0){
+        recv_bytes = recv(sockfd,msg+total,bytes_remain,0);
+        bytes_remain -= recv_bytes;
+        total += recv_bytes;
+        if (recv_bytes == 0){
+            printf("Connection ended\n");
+            break;
+        }
+        else if (recv_bytes == -1){
+            printf("Error on receiving\n");
+            break;
+        }
+    }
+    return recv_bytes;
+}
 
 /* Message Functions */
-char* random_string(size_t len){
+char* random_string(const size_t len){
     char a[27] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     char* str = malloc((len)*sizeof(*str));
     for (size_t i=0;i<len-1;i++){
@@ -117,7 +256,7 @@ char* random_string(size_t len){
     return str;
 }
 
-size_t generate_msg(char* buf_msg, size_t message_len){
+size_t generate_msg(const size_t message_len, char* buf_msg){
     // Choose random AEM and convert to string
     int rand_pos = rand() % (sizeof(AEM)/sizeof(*AEM));
     uint32_t r_aem = AEM[rand_pos];
