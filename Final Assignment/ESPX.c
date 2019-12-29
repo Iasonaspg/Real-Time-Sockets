@@ -11,7 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define buff_size 2000
+#define buff_capacity 2000
 #define AEM_count 11
 #define BACKLOG 20
 
@@ -34,6 +34,8 @@ typedef struct thread_data{
     int msg_len;
 } thr_data;
 
+size_t buff_size = 0;
+int buff_index = -1;
 
 int main(int argc, char** argv){
     if (argc != 2 ){
@@ -43,15 +45,16 @@ int main(int argc, char** argv){
     srand(time(0));
     int msg_len = atoi(argv[1]);
     size_t msg_buf_len = 2*11 + 21 + 3*sizeof("_") + msg_len; // Int32 needs char[11] and Int64 needs char[21] to be stored
-    char** buffer = malloc(buff_size*sizeof(*buffer));
-    for (int i=0;i<buff_size;i++){
+    char** buffer = malloc(buff_capacity*sizeof(*buffer));
+    for (int i=0;i<buff_capacity;i++){
         buffer[i] = malloc(msg_buf_len*sizeof(*buffer[i]));
     }
-    generate_msg(msg_len,buffer[0]);
-    generate_msg(msg_len,buffer[1]);
-    generate_msg(msg_len,buffer[2]);
-    generate_msg(msg_len,buffer[3]);
-    printf("Message_1: %s\n",buffer[3]);
+    char temp[msg_buf_len];
+    for (int i=0;i<2;i++){
+        generate_msg(msg_len,temp);
+        insert(temp,buffer);
+        // printf("Message_1: %s\n",temp);
+    }
 
     
     // Prepare addr structs for server side
@@ -98,9 +101,15 @@ int main(int argc, char** argv){
     pthread_t thread1,thread2;
     pthread_create(&thread1,NULL,client,(void *) &client_data);
     pthread_create(&thread2,NULL,server,(void *) &server_data);
-    
+    for (int i=0;i<5;i++){
+        sleep(10);
+        for (int j=0;j<buff_size;j++){
+            printf("Round: %d - buffer: %s\n",i,buffer[j]);
+        }
+    }
     pthread_join(thread1,NULL); // Before free!!
     pthread_join(thread2,NULL); // Before free!!
+    // Na dw pos skotwnw threads (logika me to kill) gia na mporw na kanw free
     for (int i=0;i<AEM_count;i++) close(sockfd[i]);
     close(ser_sock);
     free(res);
@@ -178,7 +187,7 @@ void* client_handler(void* data){
     thr_data* inc_data = (thr_data *) data;
     char** buffer = inc_data->msg_buf;
     int sock = inc_data->sock;
-    for (int i=0;i<4;i++){
+    for (int i=0;i<2;i++){
         send_msg(sockfd[sock],buffer[i]);
         printf("Sending: %s\n",buffer[i]);
     }
@@ -190,12 +199,16 @@ void* client_handler(void* data){
 void* server_handler(void* data){
     thr_data* inc_data = (thr_data*) data;
     int sock = inc_data->sock;
+    char** buffer = inc_data->msg_buf;
+    int msg_len = inc_data->msg_len;
+    char temp[msg_len];
     int recv = 0;
-    int i = 0;
     do{
-        recv = recv_msg(sock,inc_data->msg_buf[100+i],inc_data->msg_len);
-        if (recv > 0) printf("Received: %s\n",inc_data->msg_buf[100+i]);
-        i++;
+        recv = recv_msg(sock,temp,msg_len);
+        if (recv > 0){
+            printf("Received: %s\n",temp);
+            insert(temp,buffer);
+        }
     } while (recv > 0);
     close(sock);    
 }
@@ -283,4 +296,18 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
     free(random_str);
     free(message);
     return strlen(buf_msg);
+}
+
+/* Buffer Functions */
+void insert(char* value, char** buffer){
+    if ((buff_size + 1) <= buff_capacity){
+        buff_size++;
+        buff_index++;
+    }
+    else{
+        buff_index++;
+        if (buff_index == buff_capacity) buff_index = 0;
+    }
+    // printf("buff_index: %d\n",buff_index);
+    strcpy(buffer[buff_index],value);
 }
