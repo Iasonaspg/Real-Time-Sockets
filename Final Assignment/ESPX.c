@@ -11,7 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define buff_capacity 2000
+#define buff_capacity 6
 #define AEM_count 11
 #define BACKLOG 20
 
@@ -19,7 +19,7 @@
 uint32_t AEM[AEM_count] = {8021,8419,7351,4320,2810,4397,1500,8865,9020,7423,9015};
 uint32_t myAEM = 9015;
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.73.51","10.0.43.20",
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.0.13","10.0.43.20",
     "10.0.28.10","10.0.90.15","10.0.43.97","10.0.15.00","10.0.88.65","10.0.90.20","10.0.74.23","10.0.0.1"
 };
 
@@ -32,10 +32,13 @@ typedef struct thread_data{
     char** msg_buf;
     int sock;
     int msg_len;
+    short* history;
 } thr_data;
 
 size_t buff_size = 0;
 int buff_index = -1;
+
+pthread_mutex_t b_size;
 
 int main(int argc, char** argv){
     if (argc != 2 ){
@@ -49,13 +52,13 @@ int main(int argc, char** argv){
     for (int i=0;i<buff_capacity;i++){
         buffer[i] = malloc(msg_buf_len*sizeof(*buffer[i]));
     }
+    short* history = malloc(buff_capacity*AEM_count*sizeof(*history));
     char temp[msg_buf_len];
     for (int i=0;i<2;i++){
         generate_msg(msg_len,temp);
-        insert(temp,buffer);
+        insert(temp,history,buffer);
         // printf("Message_1: %s\n",temp);
     }
-
     
     // Prepare addr structs for server side
     struct addrinfo* ser_res;
@@ -95,9 +98,12 @@ int main(int argc, char** argv){
     thr_data client_data,server_data;
     client_data.res = res;
     client_data.msg_buf = buffer;
+    client_data.history = history;
     server_data.msg_buf = buffer;
     server_data.msg_len = strlen(buffer[0])+1;
     server_data.sock = ser_sock;
+    server_data.history = history;
+    pthread_mutex_init(&b_size,NULL);
     pthread_t thread1,thread2;
     pthread_create(&thread1,NULL,client,(void *) &client_data);
     pthread_create(&thread2,NULL,server,(void *) &server_data);
@@ -106,6 +112,15 @@ int main(int argc, char** argv){
         for (int j=0;j<buff_size;j++){
             printf("Round: %d - buffer: %s\n",i,buffer[j]);
         }
+        generate_msg(msg_len,temp);
+        insert(temp,history,buffer);
+    }
+    for (;;){
+        generate_msg(msg_len,temp);
+        insert(temp,history,buffer);
+        int pause = rand() % 5;
+        pause++;
+        sleep(pause);
     }
     pthread_join(thread1,NULL); // Before free!!
     pthread_join(thread2,NULL); // Before free!!
@@ -114,6 +129,7 @@ int main(int argc, char** argv){
     close(ser_sock);
     free(res);
     free(buffer);
+    pthread_mutex_destroy(&b_size);
     pthread_exit(NULL);
     return 0;
 }
@@ -144,6 +160,7 @@ void* client(void* dest){
                         connected[i] = 1;
                         comm_data[i].msg_buf = buffer;
                         comm_data[i].sock = i;
+                        comm_data[i].history = data->history;
                         pthread_create(&threads[i],NULL,client_handler,(void *)&comm_data[i]);
                     }
                 }
@@ -175,6 +192,7 @@ void* server(void* dest){
                 comm_data[pos].sock = new_fd;
                 comm_data[pos].msg_buf = data->msg_buf;
                 comm_data[pos].msg_len = data->msg_len;
+                comm_data[pos].history = data->history;
                 pthread_create(&r_threads[pos],NULL,server_handler,(void *)&comm_data[pos]);
             }
         }
@@ -187,9 +205,16 @@ void* client_handler(void* data){
     thr_data* inc_data = (thr_data *) data;
     char** buffer = inc_data->msg_buf;
     int sock = inc_data->sock;
-    for (int i=0;i<2;i++){
-        send_msg(sockfd[sock],buffer[i]);
-        printf("Sending: %s\n",buffer[i]);
+    short* history = inc_data->history;
+    pthread_mutex_lock(&b_size);
+    int size = buff_size;
+    pthread_mutex_unlock(&b_size);
+    for (int i=0;i<size;i++){
+        if (history[sock*buff_capacity + i] == 0){
+            send_msg(sockfd[sock],buffer[i]);
+            printf("Sending: %s\n",buffer[i]);
+            history[sock*buff_capacity + i] = 1;
+        }
     }
     close(sockfd[sock]);
     connected[sock] = 0;
@@ -201,13 +226,14 @@ void* server_handler(void* data){
     int sock = inc_data->sock;
     char** buffer = inc_data->msg_buf;
     int msg_len = inc_data->msg_len;
+    short* history = inc_data->history;
     char temp[msg_len];
     int recv = 0;
     do{
         recv = recv_msg(sock,temp,msg_len);
         if (recv > 0){
             printf("Received: %s\n",temp);
-            insert(temp,buffer);
+            insert(temp,history,buffer);
         }
     } while (recv > 0);
     close(sock);    
@@ -299,7 +325,11 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
 }
 
 /* Buffer Functions */
-void insert(char* value, char** buffer){
+void insert(char* value, short* history, char** buffer){
+    pthread_mutex_lock(&b_size);
+    for (int i=0;i<buff_size;i++){
+        if (strcmp(buffer[i],value) == 0) return;
+    }
     if ((buff_size + 1) <= buff_capacity){
         buff_size++;
         buff_index++;
@@ -310,4 +340,8 @@ void insert(char* value, char** buffer){
     }
     // printf("buff_index: %d\n",buff_index);
     strcpy(buffer[buff_index],value);
+    for (int i=0;i<AEM_count;i++){
+        history[i*buff_capacity + buff_index] = 0;
+    }
+    pthread_mutex_unlock(&b_size);
 }
