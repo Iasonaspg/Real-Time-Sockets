@@ -8,3 +8,4 @@ void* server_handler(void* data);
 int send_msg(int sockfd, char* msg);
 int recv_msg(int sockfd, char* msg, size_t buflen);
 void insert(char* value, short* history, char** buffer);
+void sigHandler(int dummy);

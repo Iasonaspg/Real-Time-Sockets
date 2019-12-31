@@ -7,25 +7,16 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include "ESPX.h"
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include "ESPX.h"
 
-#define buff_capacity 6
+#define buff_capacity 8
 #define AEM_count 11
 #define BACKLOG 20
 
-
-uint32_t AEM[AEM_count] = {8021,8419,7351,4320,2810,4397,1500,8865,9020,7423,9015};
-uint32_t myAEM = 9015;
-
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.0.13","10.0.43.20",
-    "10.0.28.10","10.0.90.15","10.0.43.97","10.0.15.00","10.0.88.65","10.0.90.20","10.0.74.23","10.0.0.1"
-};
-
-int sockfd[AEM_count];
-int connected[AEM_count];
-pthread_t threads[AEM_count],r_threads[AEM_count];
+static volatile int keepRunning = 1;
 
 typedef struct thread_data{
     struct addrinfo** res;
@@ -34,6 +25,18 @@ typedef struct thread_data{
     int msg_len;
     short* history;
 } thr_data;
+
+
+uint32_t AEM[AEM_count] = {8021,8419,7351,4320,2810,4397,1500,8865,9020,7423,9015};
+uint32_t myAEM = 9015;
+
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.0.13","10.0.43.20",
+    "10.0.28.10","10.0.90.15","10.0.43.97","10.0.15.00","10.0.0.12","10.0.90.20","10.0.74.23","10.0.0.1"
+};
+
+int sockfd[AEM_count];
+int connected[AEM_count];
+pthread_t threads[AEM_count],r_threads[AEM_count];
 
 size_t buff_size = 0;
 int buff_index = -1;
@@ -107,24 +110,25 @@ int main(int argc, char** argv){
     pthread_t thread1,thread2;
     pthread_create(&thread1,NULL,client,(void *) &client_data);
     pthread_create(&thread2,NULL,server,(void *) &server_data);
-    for (int i=0;i<5;i++){
-        sleep(10);
-        for (int j=0;j<buff_size;j++){
-            printf("Round: %d - buffer: %s\n",i,buffer[j]);
-        }
-        generate_msg(msg_len,temp);
-        insert(temp,history,buffer);
-    }
-    for (;;){
+    
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = &sigHandler;
+    sigaction(SIGINT, &sa, NULL);
+    while (keepRunning){
         generate_msg(msg_len,temp);
         insert(temp,history,buffer);
         int pause = rand() % 5;
         pause++;
-        sleep(pause);
+        sleep(pause+5);
+        int size = buff_size;
+        for (int j=0;j<size;j++){
+            printf("Buffer: %s\n",buffer[j]);
+        }
     }
-    pthread_join(thread1,NULL); // Before free!!
-    pthread_join(thread2,NULL); // Before free!!
-    // Na dw pos skotwnw threads (logika me to kill) gia na mporw na kanw free
+    pthread_cancel(thread1); // join Before free!!
+    pthread_cancel(thread2);
+    printf("Freeing resources\n");
     for (int i=0;i<AEM_count;i++) close(sockfd[i]);
     close(ser_sock);
     free(res);
@@ -200,7 +204,6 @@ void* server(void* dest){
     pthread_exit(NULL);
 }
 
-
 void* client_handler(void* data){
     thr_data* inc_data = (thr_data *) data;
     char** buffer = inc_data->msg_buf;
@@ -239,6 +242,10 @@ void* server_handler(void* data){
     close(sock);    
 }
 
+void sigHandler(int dummy){
+    keepRunning = 0;
+}
+
 size_t find_sender(const size_t length, const char* value){
     for (int i=0;i<length;i++){
         int status = strcmp(value,IPs[i]);
@@ -246,6 +253,7 @@ size_t find_sender(const size_t length, const char* value){
     }
     return -1;
 }
+
 
 /* Communication Functions */
 int send_msg(int sockfd, char* msg){
@@ -283,6 +291,7 @@ int recv_msg(int sockfd, char* msg, size_t buflen){
     }
     return recv_bytes;
 }
+
 
 /* Message Functions */
 char* random_string(const size_t len){
@@ -323,6 +332,7 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
     free(message);
     return strlen(buf_msg);
 }
+
 
 /* Buffer Functions */
 void insert(char* value, short* history, char** buffer){
