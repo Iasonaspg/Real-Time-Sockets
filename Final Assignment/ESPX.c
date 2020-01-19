@@ -30,8 +30,8 @@ typedef struct thread_data{
 uint32_t AEM[AEM_count] = {8021,1114,7351,4320,2810,4397,1500};
 uint32_t myAEM = 9015;
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.0.41","10.0.43.20",
-    "10.0.28.10","10.0.90.15","10.0.43.97","10.0.15.00"
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.0.4","10.0.43.20",
+    "10.0.90.15","10.0.0.15","10.0.43.97","10.0.0.14"
 };
 
 int sockfd[AEM_count];
@@ -128,11 +128,11 @@ int main(int argc, char** argv){
         sleep(pause);
         int size = buff_size;
         for (int j=0;j<size;j++){
-            // printf("Buffer: %s\n",buffer[j]);
+            printf("Buffer: %s\n",buffer[j]);
         }
         printf("\n");
     }
-    pthread_cancel(thread1); // join Before free!!
+    pthread_cancel(thread1);
     pthread_cancel(thread2);
     printf("Freeing resources\n");
     for (int i=0;i<AEM_count;i++) close(sockfd[i]);
@@ -146,6 +146,7 @@ int main(int argc, char** argv){
 
 
 void* client(void* dest){
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
     thr_data* data = (thr_data*) dest;
     struct addrinfo** res = data->res;
     char** buffer = data->msg_buf;
@@ -177,10 +178,12 @@ void* client(void* dest){
             }
         }
     }
+    printf("Vgainw\n");
     pthread_exit(NULL);
 }
 
 void* server(void* dest){
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
     thr_data* data = (thr_data*) dest;
     int ser_sock = data->sock;
 
@@ -242,15 +245,18 @@ void* server_handler(void* data){
     short* history = inc_data->history;
     char temp[msg_len];
     int recv = 0;
+    // int s = pthread_mutex_lock(&b_size);
     do{
         recv = recv_msg(sock,temp,msg_len);
         // printf("Rcv Bytes: %d\n",recv);
         if (recv > 0){
             printf("Received: %s\n",temp);
-            // insert(temp,history,buffer);
+            insert(temp,history,buffer);
         }
     } while (recv > 0);
+    // pthread_mutex_unlock(&b_size);
     close(sock);
+    pthread_exit(NULL);
 }
 
 void sigHandler(int dummy){
@@ -347,7 +353,8 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
 
 /* Buffer Functions */
 void insert(char* value, short* history, char** buffer){
-    pthread_mutex_lock(&b_size);
+    // int s = pthread_mutex_lock(&b_size);
+    // printf("Lock: %d\n",s);
     for (int i=0;i<buff_size;i++){
         if (strcmp(buffer[i],value) == 0) return;
     }
@@ -364,5 +371,5 @@ void insert(char* value, short* history, char** buffer){
     for (int i=0;i<AEM_count;i++){
         history[i*buff_capacity + buff_index] = 0;
     }
-    pthread_mutex_unlock(&b_size);
+    // pthread_mutex_unlock(&b_size);
 }
