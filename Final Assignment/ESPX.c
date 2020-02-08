@@ -14,7 +14,7 @@
 #include "ESPX.h"
 
 #define buff_capacity 2000
-#define AEM_count 7
+#define AEM_count 6
 #define BACKLOG 20
 
 static volatile int keepRunning = 1;
@@ -29,11 +29,11 @@ typedef struct thread_data{
 } thr_data;
 
 
-uint32_t AEM[AEM_count] = {8021,2014,9015,8040,3040,8419,8977};
+uint32_t AEM[AEM_count] = {8021,9015,8040,3040,8419,8977};
 uint32_t myAEM = 2040;
 char send_aem[11];
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.20.14","10.0.90.15",
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.90.15",
     "10.0.80.40","10.0.30.40","10.0.84.19","10.0.89.77"
 };
 
@@ -150,6 +150,9 @@ int main(int argc, char** argv){
         printf("Messages received from %s: %ld\n",IPs[i],msg_rcv[i]);
     }
     for (int i=0;i<AEM_count;i++){
+        printf("Not duplicate messages from %s: %ld\n",IPs[i],msg_ac_rcv[i]);
+    }
+    for (int i=0;i<AEM_count;i++){
         printf("Messages created for us from %s: %ld\n",IPs[i],true_dest[i]);
     }
     printf("Freeing resources\n");
@@ -255,7 +258,7 @@ void* client_handler(void* data){
             msg_sent[sock_pos]++;
         }
     }
-    printf("Disconnecting from %s after %lf seconds. Messages sent: %d\n",IPs[sock_pos],getMonotonicSecond()-start,count);
+    printf("Disconnecting from %s after %lf seconds. Messages sent: %d\n\n\n",IPs[sock_pos],getMonotonicSecond()-start,count);
     pthread_mutex_lock(&devs);
     devices--;
     printf("Devices connected: %d\n",devices);
@@ -292,7 +295,7 @@ void* server_handler(void* data){
             if (split(temp,"_")) true_dest[src]++;
         }
     }while (recv > 0);
-    printf("Getting disconnected from %s after %lf seconds. Messages received: %d\n",IPs[src],getMonotonicSecond()-start,count);
+    printf("Getting disconnected from %s after %lf seconds. Messages received: %d\n\n\n",IPs[src],getMonotonicSecond()-start,count);
     pthread_mutex_unlock(&b_size);
     close(sock);
     free(time_buf);
