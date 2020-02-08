@@ -13,7 +13,7 @@
 #include <time.h>
 #include "ESPX.h"
 
-#define buff_capacity 8
+#define buff_capacity 2000
 #define AEM_count 7
 #define BACKLOG 20
 
@@ -29,11 +29,11 @@ typedef struct thread_data{
 } thr_data;
 
 
-uint32_t AEM[AEM_count] = {8021,1114,7351,4320,2810,4397,1500};
+uint32_t AEM[AEM_count] = {8021,2014,9115,2040,3040,8419,8977};
 uint32_t myAEM = 9015;
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.10.0.4","10.0.90.15",
-    "10.0.0.4","10.0.0.15","10.0.0.4","10.0.9.15"
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.20.14","10.0.91.15",
+    "10.0.20.40","10.0.30.40","10.0.84.19","10.0.89.77"
 };
 
 int sockfd[AEM_count];
@@ -129,22 +129,19 @@ int main(int argc, char** argv){
     sa.sa_handler = &sigHandler;
     sigaction(SIGINT, &sa, NULL);
     while (keepRunning){
-        // generate_msg(msg_len,temp);
-        // insert(temp,history,buffer);
+        generate_msg(msg_len,temp);
+        insert(temp,history,buffer);
         int pause = rand() % 5;
         pause++;
         sleep(pause);
         int size = buff_size;
-        for (int j=0;j<size;j++){
-            // printf("Buffer: %s\n",buffer[j]);
-        }
+        // for (int j=0;j<size;j++){
+        //     printf("Buffer: %s\n",buffer[j]);
+        // }
         printf("\n");
     }
     pthread_cancel(thread1);
     pthread_cancel(thread2);
-    for (int j=0;j<buff_size;j++){
-        printf("Buffer: %s\n",buffer[j]);
-    }
     for (int i=0;i<AEM_count;i++){
         printf("Messages sent to %s: %ld\t",IPs[i],msg_sent[i]);
         printf("\tMessages received from %s: %ld\n",IPs[i],msg_rcv[i]);
@@ -167,7 +164,7 @@ void* client(void* dest){
     struct addrinfo** res = data->res;
     char** buffer = data->msg_buf;
     thr_data comm_data[AEM_count];
-    for (int i=0;i<2;i++){
+    for (;;){
         for (int i=0;i<AEM_count;i++){
             if (connected[i] != 1){
                 sockfd[i] = socket(res[i]->ai_family, res[i]->ai_socktype, res[i]->ai_protocol);
@@ -190,7 +187,7 @@ void* client(void* dest){
                         pthread_create(&threads[i],NULL,client_handler,(void *)&comm_data[i]);
                         pthread_mutex_lock(&devs);
                         devices++;
-                        // printf("Devices connected: %d\n",devices);
+                        printf("Devices connected: %d\n",devices);
                         pthread_mutex_unlock(&devs);
                     }
                 }
@@ -253,7 +250,7 @@ void* client_handler(void* data){
     printf("Disconnecting from %s after %lf seconds. Messages sent: %d\n",IPs[sock_pos],getMonotonicSecond()-start,count);
     pthread_mutex_lock(&devs);
     devices--;
-    // printf("Devices connected: %d\n",devices);
+    printf("Devices connected: %d\n",devices);
     pthread_mutex_unlock(&devs);
     close(sockfd[sock_pos]);
     connected[sock_pos] = 0;
@@ -282,7 +279,7 @@ void* server_handler(void* data){
             msg_rcv[src]++;
         }
     }while (recv > 0);
-    printf("Disconnecting from %s after %lf seconds. Messages received: %d\n",IPs[src],getMonotonicSecond()-start,count);
+    printf("Getting disconnected from %s after %lf seconds. Messages received: %d\n",IPs[src],getMonotonicSecond()-start,count);
     pthread_mutex_unlock(&b_size);
     close(sock);
     pthread_exit(NULL);
@@ -393,7 +390,6 @@ void insert(char* value, short* history, char** buffer){
         buff_index++;
         if (buff_index == buff_capacity) buff_index = 0;
     }
-    // printf("buff_index: %d\n",buff_index);
     strcpy(buffer[buff_index],value);
     for (int i=0;i<AEM_count;i++){
         history[i*buff_capacity + buff_index] = 0;
