@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <time.h>
 #include "ESPX.h"
 
 #define buff_capacity 8
@@ -24,24 +25,29 @@ typedef struct thread_data{
     int sock;
     int msg_len;
     short* history;
+    int src;
 } thr_data;
 
 
 uint32_t AEM[AEM_count] = {8021,1114,7351,4320,2810,4397,1500};
 uint32_t myAEM = 9015;
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.0.4","10.0.43.20",
-    "10.0.90.15","10.0.0.15","10.0.43.97","10.0.0.14"
+char IPs[AEM_count][16] = {"10.0.80.21","10.10.0.4","10.0.90.15",
+    "10.0.0.14","10.0.0.15","10.0.0.4","10.0.9.15"
 };
 
 int sockfd[AEM_count];
 int connected[AEM_count];
 pthread_t threads[AEM_count],r_threads[AEM_count];
+size_t msg_sent[AEM_count];
+size_t msg_rcv[AEM_count];
 
 size_t buff_size = 0;
 int buff_index = -1;
 
-pthread_mutex_t b_size;
+pthread_mutex_t b_size,devs;
+
+int devices = 0;
 
 int main(int argc, char** argv){
     if (argc != 2 ){
@@ -66,7 +72,6 @@ int main(int argc, char** argv){
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;
-    // hints.ai_flags = AI_PASSIVE;
     int status = getaddrinfo("10.0.0.4","2288",&hints,&ser_res);
     if (status != 0) {
         printf("getaddrinfo for localhost failed with code: %s\n", gai_strerror(status));
@@ -96,6 +101,7 @@ int main(int argc, char** argv){
         }
     }
 
+    // Block sigint on main thread and all of it's children
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGINT);
@@ -110,10 +116,12 @@ int main(int argc, char** argv){
     server_data.sock = ser_sock;
     server_data.history = history;
     pthread_mutex_init(&b_size,NULL);
+    pthread_mutex_init(&devs,NULL);
     pthread_t thread1,thread2;
     pthread_create(&thread1,NULL,client,(void *) &client_data);
     pthread_create(&thread2,NULL,server,(void *) &server_data);
 
+    // Unblock sigint on main thread
     st = pthread_sigmask(SIG_UNBLOCK, &set, NULL);
     if (st != 0) printf("Error in pthread_sigmask\n");
     struct sigaction sa;
@@ -128,7 +136,7 @@ int main(int argc, char** argv){
         sleep(pause);
         int size = buff_size;
         for (int j=0;j<size;j++){
-            printf("Buffer: %s\n",buffer[j]);
+            // printf("Buffer: %s\n",buffer[j]);
         }
         printf("\n");
     }
@@ -140,6 +148,7 @@ int main(int argc, char** argv){
     free(res);
     free(buffer);
     pthread_mutex_destroy(&b_size);
+    pthread_mutex_destroy(&devs);
     pthread_exit(NULL);
     return 0;
 }
@@ -167,18 +176,20 @@ void* client(void* dest){
                         close(sockfd[i]);
                     }
                     else{
-                        printf("Connected to %s\n",IPs[i]);
                         connected[i] = 1;
                         comm_data[i].msg_buf = buffer;
                         comm_data[i].sock = i;
                         comm_data[i].history = data->history;
                         pthread_create(&threads[i],NULL,client_handler,(void *)&comm_data[i]);
+                        pthread_mutex_lock(&devs);
+                        devices++;
+                        // printf("Devices connected: %d\n",devices);
+                        pthread_mutex_unlock(&devs);
                     }
                 }
             }
         }
     }
-    printf("Vgainw\n");
     pthread_exit(NULL);
 }
 
@@ -197,13 +208,13 @@ void* server(void* dest){
             printf("Error on accepting\n");
         }
         else{
-            printf("Connection accepted\n");
+            // printf("Connection accepted\n");
             struct sockaddr_in* ip_struct = (struct sockaddr_in *) &cli_addr;
             inet_ntop(AF_INET,&(ip_struct->sin_addr),ip,INET_ADDRSTRLEN);
             size_t pos = find_sender(AEM_count,ip);
-            // printf("Connected from: %s with pos: %ld\n",ip,pos);
             if (pos != -1){
                 comm_data[pos].sock = new_fd;
+                comm_data[pos].src = pos;
                 comm_data[pos].msg_buf = data->msg_buf;
                 comm_data[pos].msg_len = data->msg_len;
                 comm_data[pos].history = data->history;
@@ -215,46 +226,57 @@ void* server(void* dest){
 }
 
 void* client_handler(void* data){
+    double start = getMonotonicSecond();
     thr_data* inc_data = (thr_data *) data;
     char** buffer = inc_data->msg_buf;
-    int sock = inc_data->sock;
-    // printf("client send with socket: %d\n",sockfd[sock]);
+    int sock_pos = inc_data->sock;
     short* history = inc_data->history;
-    // pthread_mutex_lock(&b_size);
+    printf("Connected to %s\n",IPs[sock_pos]);
     int size = buff_size;
-    // pthread_mutex_unlock(&b_size);
+    int count = 0;
     for (int i=0;i<size;i++){
-        // history[sock*buff_capacity + i] == 0
-        if (1){
-            int s = send_msg(sockfd[sock],buffer[i]);
-            // printf("Bytes sent: %d\n",s);
-            printf("Sending: %s\n",buffer[i]);
-            // history[sock*buff_capacity + i] = 1;
+        if (history[sock_pos*buff_capacity + i] == 0){
+            int s = send_msg(sockfd[sock_pos],buffer[i]);
+            // printf("Sending: %s\n",buffer[i]);
+            history[sock_pos*buff_capacity + i] = 1;
+            count++;
+            msg_sent[sock_pos]++;
         }
     }
-    close(sockfd[sock]);
-    connected[sock] = 0;
+    printf("Disconnecting from %s after %lf seconds. Messages sent: %d\n",IPs[sock_pos],getMonotonicSecond()-start,count);
+    pthread_mutex_lock(&devs);
+    devices--;
+    // printf("Devices connected: %d\n",devices);
+    pthread_mutex_unlock(&devs);
+    close(sockfd[sock_pos]);
+    connected[sock_pos] = 0;
     pthread_exit(NULL);
 }
 
 void* server_handler(void* data){
+    double start = getMonotonicSecond();
     thr_data* inc_data = (thr_data*) data;
     int sock = inc_data->sock;
     char** buffer = inc_data->msg_buf;
     int msg_len = inc_data->msg_len;
     short* history = inc_data->history;
+    int src = inc_data->src;
     char temp[msg_len];
     int recv = 0;
-    // int s = pthread_mutex_lock(&b_size);
+    int count = 0;
+    int s = pthread_mutex_lock(&b_size);
+    printf("Connected from: %s\n",IPs[src]);
     do{
         recv = recv_msg(sock,temp,msg_len);
-        // printf("Rcv Bytes: %d\n",recv);
         if (recv > 0){
-            printf("Received: %s\n",temp);
+            // printf("Received: %s\n",temp);
             insert(temp,history,buffer);
+            count++;
+            msg_rcv[src]++;
         }
-    } while (recv > 0);
-    // pthread_mutex_unlock(&b_size);
+    }while (recv > 0);
+    printf("Disconnecting from %s after %lf seconds. Messages received: %d\n",IPs[src],getMonotonicSecond()-start,count);
+    pthread_mutex_unlock(&b_size);
     close(sock);
     pthread_exit(NULL);
 }
@@ -353,8 +375,6 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
 
 /* Buffer Functions */
 void insert(char* value, short* history, char** buffer){
-    // int s = pthread_mutex_lock(&b_size);
-    // printf("Lock: %d\n",s);
     for (int i=0;i<buff_size;i++){
         if (strcmp(buffer[i],value) == 0) return;
     }
@@ -371,5 +391,11 @@ void insert(char* value, short* history, char** buffer){
     for (int i=0;i<AEM_count;i++){
         history[i*buff_capacity + buff_index] = 0;
     }
-    // pthread_mutex_unlock(&b_size);
+}
+
+/* Timing Functions */
+double getMonotonicSecond(){
+  struct timespec tp;
+  clock_gettime(CLOCK_MONOTONIC,&tp);
+  return ((double)tp.tv_sec + (double)tp.tv_nsec*1e-9);
 }
