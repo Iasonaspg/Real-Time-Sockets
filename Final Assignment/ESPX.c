@@ -33,7 +33,7 @@ uint32_t AEM[AEM_count] = {8021,1114,7351,4320,2810,4397,1500};
 uint32_t myAEM = 9015;
 
 char IPs[AEM_count][16] = {"10.0.80.21","10.10.0.4","10.0.90.15",
-    "10.0.0.14","10.0.0.15","10.0.0.4","10.0.9.15"
+    "10.0.0.4","10.0.0.15","10.0.0.4","10.0.9.15"
 };
 
 int sockfd[AEM_count];
@@ -72,7 +72,7 @@ int main(int argc, char** argv){
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;
-    int status = getaddrinfo("10.0.0.4","2288",&hints,&ser_res);
+    int status = getaddrinfo("10.0.90.15","2288",&hints,&ser_res);
     if (status != 0) {
         printf("getaddrinfo for localhost failed with code: %s\n", gai_strerror(status));
     }
@@ -129,8 +129,8 @@ int main(int argc, char** argv){
     sa.sa_handler = &sigHandler;
     sigaction(SIGINT, &sa, NULL);
     while (keepRunning){
-        generate_msg(msg_len,temp);
-        insert(temp,history,buffer);
+        // generate_msg(msg_len,temp);
+        // insert(temp,history,buffer);
         int pause = rand() % 5;
         pause++;
         sleep(pause);
@@ -142,6 +142,13 @@ int main(int argc, char** argv){
     }
     pthread_cancel(thread1);
     pthread_cancel(thread2);
+    for (int j=0;j<buff_size;j++){
+        printf("Buffer: %s\n",buffer[j]);
+    }
+    for (int i=0;i<AEM_count;i++){
+        printf("Messages sent to %s: %ld\t",IPs[i],msg_sent[i]);
+        printf("\tMessages received from %s: %ld\n",IPs[i],msg_rcv[i]);
+    }
     printf("Freeing resources\n");
     for (int i=0;i<AEM_count;i++) close(sockfd[i]);
     close(ser_sock);
@@ -160,7 +167,7 @@ void* client(void* dest){
     struct addrinfo** res = data->res;
     char** buffer = data->msg_buf;
     thr_data comm_data[AEM_count];
-    for (;;){
+    for (int i=0;i<2;i++){
         for (int i=0;i<AEM_count;i++){
             if (connected[i] != 1){
                 sockfd[i] = socket(res[i]->ai_family, res[i]->ai_socktype, res[i]->ai_protocol);
