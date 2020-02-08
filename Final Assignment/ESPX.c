@@ -29,11 +29,11 @@ typedef struct thread_data{
 } thr_data;
 
 
-uint32_t AEM[AEM_count] = {8021,2014,9115,2040,3040,8419,8977};
-uint32_t myAEM = 9015;
+uint32_t AEM[AEM_count] = {8021,2014,9015,8040,3040,8419,8977};
+uint32_t myAEM = 2040;
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.20.14","10.0.91.15",
-    "10.0.20.40","10.0.30.40","10.0.84.19","10.0.89.77"
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.20.14","10.0.90.15",
+    "10.0.80.40","10.0.30.40","10.0.84.19","10.0.89.77"
 };
 
 int sockfd[AEM_count];
@@ -41,6 +41,7 @@ int connected[AEM_count];
 pthread_t threads[AEM_count],r_threads[AEM_count];
 size_t msg_sent[AEM_count];
 size_t msg_rcv[AEM_count];
+size_t msg_ac_rcv[AEM_count];
 
 size_t buff_size = 0;
 int buff_index = -1;
@@ -72,7 +73,7 @@ int main(int argc, char** argv){
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;
-    int status = getaddrinfo("10.0.90.15","2288",&hints,&ser_res);
+    int status = getaddrinfo("10.0.20.40","2288",&hints,&ser_res);
     if (status != 0) {
         printf("getaddrinfo for localhost failed with code: %s\n", gai_strerror(status));
     }
@@ -133,7 +134,7 @@ int main(int argc, char** argv){
         insert(temp,history,buffer);
         int pause = rand() % 5;
         pause++;
-        sleep(pause);
+        sleep(pause*60);
         int size = buff_size;
         // for (int j=0;j<size;j++){
         //     printf("Buffer: %s\n",buffer[j]);
@@ -144,7 +145,7 @@ int main(int argc, char** argv){
     pthread_cancel(thread2);
     for (int i=0;i<AEM_count;i++){
         printf("Messages sent to %s: %ld\t",IPs[i],msg_sent[i]);
-        printf("\tMessages received from %s: %ld\n",IPs[i],msg_rcv[i]);
+        printf("Messages received from %s: %ld\n",IPs[i],msg_rcv[i]);
     }
     printf("Freeing resources\n");
     for (int i=0;i<AEM_count;i++) close(sockfd[i]);
@@ -274,9 +275,10 @@ void* server_handler(void* data){
         recv = recv_msg(sock,temp,msg_len);
         if (recv > 0){
             // printf("Received: %s\n",temp);
-            insert(temp,history,buffer);
+            short ac = insert(temp,history,buffer);
             count++;
             msg_rcv[src]++;
+            if (ac == 1) msg_ac_rcv[src]++;
         }
     }while (recv > 0);
     printf("Getting disconnected from %s after %lf seconds. Messages received: %d\n",IPs[src],getMonotonicSecond()-start,count);
@@ -378,9 +380,9 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
 
 
 /* Buffer Functions */
-void insert(char* value, short* history, char** buffer){
+short insert(char* value, short* history, char** buffer){
     for (int i=0;i<buff_size;i++){
-        if (strcmp(buffer[i],value) == 0) return;
+        if (strcmp(buffer[i],value) == 0) return -1;
     }
     if ((buff_size + 1) <= buff_capacity){
         buff_size++;
@@ -394,6 +396,7 @@ void insert(char* value, short* history, char** buffer){
     for (int i=0;i<AEM_count;i++){
         history[i*buff_capacity + buff_index] = 0;
     }
+    return 1;
 }
 
 /* Timing Functions */
