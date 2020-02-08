@@ -31,6 +31,7 @@ typedef struct thread_data{
 
 uint32_t AEM[AEM_count] = {8021,2014,9015,8040,3040,8419,8977};
 uint32_t myAEM = 2040;
+char send_aem[11];
 
 char IPs[AEM_count][16] = {"10.0.80.21","10.0.20.14","10.0.90.15",
     "10.0.80.40","10.0.30.40","10.0.84.19","10.0.89.77"
@@ -42,6 +43,7 @@ pthread_t threads[AEM_count],r_threads[AEM_count];
 size_t msg_sent[AEM_count];
 size_t msg_rcv[AEM_count];
 size_t msg_ac_rcv[AEM_count];
+size_t true_dest[AEM_count];
 
 size_t buff_size = 0;
 int buff_index = -1;
@@ -147,6 +149,9 @@ int main(int argc, char** argv){
         printf("Messages sent to %s: %ld\t",IPs[i],msg_sent[i]);
         printf("Messages received from %s: %ld\n",IPs[i],msg_rcv[i]);
     }
+    for (int i=0;i<AEM_count;i++){
+        printf("Messages created for us from %s: %ld\n",IPs[i],true_dest[i]);
+    }
     printf("Freeing resources\n");
     for (int i=0;i<AEM_count;i++) close(sockfd[i]);
     close(ser_sock);
@@ -236,7 +241,9 @@ void* client_handler(void* data){
     char** buffer = inc_data->msg_buf;
     int sock_pos = inc_data->sock;
     short* history = inc_data->history;
-    printf("Connected to %s\n",IPs[sock_pos]);
+
+    char* time_buf = get_date();
+    printf("Connected to %s, %s\n",IPs[sock_pos],time_buf);
     int size = buff_size;
     int count = 0;
     for (int i=0;i<size;i++){
@@ -255,6 +262,7 @@ void* client_handler(void* data){
     pthread_mutex_unlock(&devs);
     close(sockfd[sock_pos]);
     connected[sock_pos] = 0;
+    free(time_buf);
     pthread_exit(NULL);
 }
 
@@ -266,11 +274,13 @@ void* server_handler(void* data){
     int msg_len = inc_data->msg_len;
     short* history = inc_data->history;
     int src = inc_data->src;
+
+    char* time_buf = get_date();
     char temp[msg_len];
     int recv = 0;
     int count = 0;
     int s = pthread_mutex_lock(&b_size);
-    printf("Connected from: %s\n",IPs[src]);
+    printf("Connected from: %s, %s\n",IPs[src],time_buf);
     do{
         recv = recv_msg(sock,temp,msg_len);
         if (recv > 0){
@@ -279,11 +289,13 @@ void* server_handler(void* data){
             count++;
             msg_rcv[src]++;
             if (ac == 1) msg_ac_rcv[src]++;
+            if (split(temp,"_")) true_dest[src]++;
         }
     }while (recv > 0);
     printf("Getting disconnected from %s after %lf seconds. Messages received: %d\n",IPs[src],getMonotonicSecond()-start,count);
     pthread_mutex_unlock(&b_size);
     close(sock);
+    free(time_buf);
     pthread_exit(NULL);
 }
 
@@ -353,7 +365,7 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
     // Choose random AEM and convert to string
     int rand_pos = rand() % (sizeof(AEM)/sizeof(*AEM));
     uint32_t r_aem = AEM[rand_pos];
-    char send_aem[11], recv_aem[11], timestamp[21];
+    char recv_aem[11], timestamp[21];
     int s_bytes = sprintf(send_aem,"%u",myAEM);
     int r_bytes = sprintf(recv_aem,"%u",r_aem);
 
@@ -378,6 +390,16 @@ size_t generate_msg(const size_t message_len, char* buf_msg){
     return strlen(buf_msg);
 }
 
+short split(char* str, char* delim){
+    int i = 0;
+    char* token = strtok(str, delim);
+    while ((token != NULL) && (i < 1)) {
+        // printf("%s", token);
+        token = strtok(NULL, delim);
+        i++;
+    }
+    return (strcmp(token,send_aem) == 0);
+}
 
 /* Buffer Functions */
 short insert(char* value, short* history, char** buffer){
@@ -404,4 +426,14 @@ double getMonotonicSecond(){
   struct timespec tp;
   clock_gettime(CLOCK_MONOTONIC,&tp);
   return ((double)tp.tv_sec + (double)tp.tv_nsec*1e-9);
+}
+
+char* get_date(){
+    time_t rawtime;
+    struct tm* timeinfo;
+    char* time_buf = malloc(80*sizeof(*time_buf));
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(time_buf,80,"at %D on %X",timeinfo);
+    return time_buf;
 }

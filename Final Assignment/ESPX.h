@@ -10,3 +10,5 @@ int recv_msg(int sockfd, char* msg, size_t buflen);
 short insert(char* value, short* history, char** buffer);
 void sigHandler(int dummy);
 double getMonotonicSecond();
+short split(char* str, char* delim);
+char* get_date();
