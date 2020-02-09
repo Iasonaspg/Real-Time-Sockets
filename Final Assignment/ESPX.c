@@ -29,12 +29,12 @@ typedef struct thread_data{
 } thr_data;
 
 
-uint32_t AEM[AEM_count] = {8021,9015,8040,3040,8419,8977};
-uint32_t myAEM = 2040;
+uint32_t AEM[AEM_count] = {8021,9115,2040,3040,8419,8977};
+uint32_t myAEM = 9015;
 char send_aem[11];
 
-char IPs[AEM_count][16] = {"10.0.80.21","10.0.90.15",
-    "10.0.80.40","10.0.30.40","10.0.84.19","10.0.89.77"
+char IPs[AEM_count][16] = {"10.0.80.21","10.0.91.15",
+    "10.0.20.40","10.0.30.40","10.0.84.19","10.0.89.77"
 };
 
 int sockfd[AEM_count];
@@ -75,7 +75,7 @@ int main(int argc, char** argv){
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;
-    int status = getaddrinfo("10.0.20.40","2288",&hints,&ser_res);
+    int status = getaddrinfo("10.0.90.15","2288",&hints,&ser_res);
     if (status != 0) {
         printf("getaddrinfo for localhost failed with code: %s\n", gai_strerror(status));
     }
@@ -136,7 +136,7 @@ int main(int argc, char** argv){
         insert(temp,history,buffer);
         int pause = rand() % 5;
         pause++;
-        sleep(pause*60);
+        sleep(pause*10);
         int size = buff_size;
         // for (int j=0;j<size;j++){
         //     printf("Buffer: %s\n",buffer[j]);
@@ -150,7 +150,7 @@ int main(int argc, char** argv){
         printf("Messages received from %s: %ld\n",IPs[i],msg_rcv[i]);
     }
     for (int i=0;i<AEM_count;i++){
-        printf("Not duplicate messages from %s: %ld\n",IPs[i],msg_ac_rcv[i]);
+        printf("Messages stored (not duplicate) from %s: %ld\n",IPs[i],msg_ac_rcv[i]);
     }
     for (int i=0;i<AEM_count;i++){
         printf("Messages created for us from %s: %ld\n",IPs[i],true_dest[i]);
