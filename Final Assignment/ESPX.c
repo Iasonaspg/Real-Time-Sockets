@@ -40,26 +40,29 @@ char IPs[AEM_count][16] = {"10.0.80.21","10.0.91.15",
 int sockfd[AEM_count];
 int connected[AEM_count];
 pthread_t threads[AEM_count],r_threads[AEM_count];
+// Variables about stats
 size_t msg_sent[AEM_count];
 size_t msg_rcv[AEM_count];
 size_t msg_ac_rcv[AEM_count];
 size_t true_dest[AEM_count];
+int devices = 0;
 
+// Ring buffer variables
 size_t buff_size = 0;
 int buff_index = -1;
 
 pthread_mutex_t b_size,devs;
 
-int devices = 0;
 
 int main(int argc, char** argv){
     if (argc != 2 ){
-        printf("Invalid input number of args\n");
+        printf("Invalid input number of args. Insert number of message characters\n");
         return 1;
     }
     srand(time(0));
     int msg_len = atoi(argv[1]);
     size_t msg_buf_len = 2*11 + 21 + 3*sizeof("_") + msg_len; // Int32 needs char[11] and Int64 needs char[21] to be stored
+    // Memory allocation for buffer and history
     char** buffer = malloc(buff_capacity*sizeof(*buffer));
     for (int i=0;i<buff_capacity;i++){
         buffer[i] = malloc(msg_buf_len*sizeof(*buffer[i]));
@@ -69,7 +72,7 @@ int main(int argc, char** argv){
     generate_msg(msg_len,temp);
     insert(temp,history,buffer);
 
-    // Prepare addr structs for server side
+    // Prepare address structs for server side
     struct addrinfo* ser_res;
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -96,7 +99,7 @@ int main(int argc, char** argv){
     struct addrinfo** res = malloc(AEM_count*sizeof(*res));
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;      // IPv4
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_socktype = SOCK_STREAM; // TCP
     for (int i=0;i<AEM_count;i++){
         status = getaddrinfo(IPs[i], "2288", &hints, res+i);
         if (status != 0) {
@@ -110,6 +113,7 @@ int main(int argc, char** argv){
     sigaddset(&set, SIGINT);
     int st = pthread_sigmask(SIG_BLOCK, &set, NULL);
     if (st != 0) printf("Error in pthread_sigmask\n");
+    // Pack data for threads and create them
     thr_data client_data,server_data;
     client_data.res = res;
     client_data.msg_buf = buffer;
@@ -124,13 +128,14 @@ int main(int argc, char** argv){
     pthread_create(&thread1,NULL,client,(void *) &client_data);
     pthread_create(&thread2,NULL,server,(void *) &server_data);
 
-    // Unblock sigint on main thread
+    // Unblock sigint on main thread and set signal handler
     st = pthread_sigmask(SIG_UNBLOCK, &set, NULL);
     if (st != 0) printf("Error in pthread_sigmask\n");
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = &sigHandler;
     sigaction(SIGINT, &sa, NULL);
+    // loop for random message generation
     while (keepRunning){
         generate_msg(msg_len,temp);
         insert(temp,history,buffer);
@@ -166,7 +171,7 @@ int main(int argc, char** argv){
     return 0;
 }
 
-
+// Function that searches for devices and tries to connect with
 void* client(void* dest){
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
     thr_data* data = (thr_data*) dest;
@@ -175,7 +180,7 @@ void* client(void* dest){
     thr_data comm_data[AEM_count];
     for (;;){
         for (int i=0;i<AEM_count;i++){
-            if (connected[i] != 1){
+            if (connected[i] != 1){     // ignore connected devices
                 sockfd[i] = socket(res[i]->ai_family, res[i]->ai_socktype, res[i]->ai_protocol);
                 if (sockfd[i] == -1){
                     printf("Error on socket creation for IP: %s\n",IPs[i]);
@@ -183,7 +188,7 @@ void* client(void* dest){
                 else{
                     int synRetries = 1; // 2 => Timeout ~7s
                     setsockopt(sockfd[i], IPPROTO_TCP, TCP_SYNCNT, &synRetries, sizeof(synRetries));
-                    int status = connect(sockfd[i],res[i]->ai_addr,res[i]->ai_addrlen);
+                    int status = connect(sockfd[i],res[i]->ai_addr,res[i]->ai_addrlen);     // try to connect
                     if (status == -1){
                         // printf("Error on connecting to IP: %s\n",IPs[i]);
                         close(sockfd[i]);
@@ -193,7 +198,7 @@ void* client(void* dest){
                         comm_data[i].msg_buf = buffer;
                         comm_data[i].sock = i;
                         comm_data[i].history = data->history;
-                        pthread_create(&threads[i],NULL,client_handler,(void *)&comm_data[i]);
+                        pthread_create(&threads[i],NULL,client_handler,(void *)&comm_data[i]); // create thread to send messages on succesful connection
                         pthread_mutex_lock(&devs);
                         devices++;
                         printf("Devices connected: %d\n",devices);
@@ -206,6 +211,7 @@ void* client(void* dest){
     pthread_exit(NULL);
 }
 
+// Function that waits for incoming connections
 void* server(void* dest){
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
     thr_data* data = (thr_data*) dest;
@@ -216,7 +222,7 @@ void* server(void* dest){
     char ip[INET_ADDRSTRLEN];
     thr_data comm_data[AEM_count];
     for (;;){
-        int new_fd = accept(ser_sock, (struct sockaddr *)&cli_addr, &addr_size);
+        int new_fd = accept(ser_sock, (struct sockaddr *)&cli_addr, &addr_size);    // wait for new connection
         if (new_fd == -1){
             printf("Error on accepting\n");
         }
@@ -224,20 +230,21 @@ void* server(void* dest){
             // printf("Connection accepted\n");
             struct sockaddr_in* ip_struct = (struct sockaddr_in *) &cli_addr;
             inet_ntop(AF_INET,&(ip_struct->sin_addr),ip,INET_ADDRSTRLEN);
-            size_t pos = find_sender(AEM_count,ip);
+            size_t pos = find_sender(AEM_count,ip);  // check if the device is known
             if (pos != -1){
                 comm_data[pos].sock = new_fd;
                 comm_data[pos].src = pos;
                 comm_data[pos].msg_buf = data->msg_buf;
                 comm_data[pos].msg_len = data->msg_len;
                 comm_data[pos].history = data->history;
-                pthread_create(&r_threads[pos],NULL,server_handler,(void *)&comm_data[pos]);
+                pthread_create(&r_threads[pos],NULL,server_handler,(void *)&comm_data[pos]);  // create new thread to receive messages
             }
         }
     }
     pthread_exit(NULL);
 }
 
+// Function that send messages to a device
 void* client_handler(void* data){
     double start = getMonotonicSecond();
     thr_data* inc_data = (thr_data *) data;
@@ -269,6 +276,7 @@ void* client_handler(void* data){
     pthread_exit(NULL);
 }
 
+// Function that receives messages from a device
 void* server_handler(void* data){
     double start = getMonotonicSecond();
     thr_data* inc_data = (thr_data*) data;
@@ -306,6 +314,7 @@ void sigHandler(int dummy){
     keepRunning = 0;
 }
 
+// Function that returns position of an IP
 size_t find_sender(const size_t length, const char* value){
     for (int i=0;i<length;i++){
         int status = strcmp(value,IPs[i]);
