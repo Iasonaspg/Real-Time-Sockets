@@ -1,8 +1,8 @@
-# Real Time Embedded Systems Project
+# Real Time Sockets Application for embedded devices
 
 ## Project Information
 
-Using a *Raspberry Pi* Zero, our goal was to create a *C* application that uses *sockets* and threads and can interact with other *Raspberry Pi*'s exchanging messages.
+Using a *Raspberry Pi* Zero, our goal was to create a *C* application that uses *sockets* and *threads* and can interact with other *Raspberry Pi*'s exchanging messages.
 
 More specifically, by using the same *SSID* network, the devices will belong to the same network and can be searched using their gateway private IP. Upon connection, a message queue is used to store received and generated messages.
 
